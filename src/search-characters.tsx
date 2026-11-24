@@ -1,4 +1,11 @@
-import { Action, ActionPanel, environment, Icon, List } from "@raycast/api";
+import {
+  Action,
+  ActionPanel,
+  environment,
+  Icon,
+  Keyboard,
+  List,
+} from "@raycast/api";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -44,6 +51,12 @@ function previewFor(previewId: string, code: string) {
 
 function entryId(entry: Entry) {
   return `${entry.kind}/${entry.name}/${formatCodePoints(entry)}`;
+}
+
+function formatUnicodeEscapes(entry: Entry): string {
+  return entry.codes
+    .map((code) => (code.length > 4 ? `\\u{${code}}` : `\\u${code}`))
+    .join("");
 }
 
 function displayGlyph(character: string): string {
@@ -304,6 +317,7 @@ export default function SearchCharacters() {
             const [names, keywords] = (entry === selectedEntry &&
               catalog?.emojiInfo(entry)) || [[], []];
             const shortcodes = names.map((name) => `:${name}:`);
+            const codeNames = entry.kind === "nerd" ? [entry.name] : shortcodes;
             const nerdPreview =
               catalog && entry.kind === "nerd"
                 ? previewFor(catalog.previewId, entry.codes[0])
@@ -344,35 +358,63 @@ export default function SearchCharacters() {
                         <Action.CopyToClipboard
                           title="Copy Character"
                           content={entry.character}
+                          shortcut={{ modifiers: ["cmd"], key: "c" }}
                         />
                       </ActionPanel.Section>
                       <ActionPanel.Section>
-                        <Action.Paste title="Paste Name" content={entry.name} />
                         <Action.CopyToClipboard
                           title="Copy Name"
                           content={entry.name}
+                          shortcut={Keyboard.Shortcut.Common.New}
                         />
                         <Action.Paste
-                          title="Paste Code Point"
-                          content={codePoints}
+                          title="Paste Name"
+                          content={entry.name}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "n" }}
                         />
                         <Action.CopyToClipboard
                           title="Copy Code Point"
                           content={codePoints}
+                          shortcut={{ modifiers: ["cmd"], key: "u" }}
+                        />
+                        <Action.Paste
+                          title="Paste Code Point"
+                          content={codePoints}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}
+                        />
+                        <Action.CopyToClipboard
+                          title="Copy Unicode Escape"
+                          content={formatUnicodeEscapes(entry)}
+                          shortcut={{ modifiers: ["cmd"], key: "j" }}
+                        />
+                        <Action.Paste
+                          title="Paste Unicode Escape"
+                          content={formatUnicodeEscapes(entry)}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "j" }}
                         />
                       </ActionPanel.Section>
-                      {shortcodes.length > 0 && (
-                        <ActionPanel.Section title="GitHub Shortcodes">
-                          {shortcodes.flatMap((shortcode) => [
+                      {codeNames.length > 0 && (
+                        <ActionPanel.Section title="Code Names">
+                          {codeNames.flatMap((codeName, index) => [
                             <Action.Paste
-                              key={`paste/${shortcode}`}
-                              title={`Paste ${shortcode}`}
-                              content={shortcode}
+                              key={`paste/${codeName}`}
+                              title={`Paste ${codeName}`}
+                              content={codeName}
+                              shortcut={
+                                index === 0
+                                  ? { modifiers: ["shift"], key: "enter" }
+                                  : undefined
+                              }
                             />,
                             <Action.CopyToClipboard
-                              key={`copy/${shortcode}`}
-                              title={`Copy ${shortcode}`}
-                              content={shortcode}
+                              key={`copy/${codeName}`}
+                              title={`Copy ${codeName}`}
+                              content={codeName}
+                              shortcut={
+                                index === 0
+                                  ? { modifiers: ["cmd", "shift"], key: "c" }
+                                  : undefined
+                              }
                             />,
                           ])}
                         </ActionPanel.Section>
