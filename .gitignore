@@ -1,0 +1,6 @@
+node_modules/
+dist/
+assets/nerd/
+raycast-env.d.ts
+vicinae-env.d.ts
+__pycache__/

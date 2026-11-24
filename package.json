@@ -1,0 +1,46 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "character-search",
+  "title": "Character Search",
+  "description": "Find Unicode characters, emoji, and Nerd Fonts glyphs, then paste or copy them",
+  "icon": "icon.png",
+  "author": "akinori",
+  "categories": [
+    "Productivity",
+    "Developer Tools"
+  ],
+  "license": "MIT",
+  "version": "0.1.0",
+  "commands": [
+    {
+      "name": "search-characters",
+      "title": "Search Characters",
+      "description": "Search Unicode, emoji, and Nerd Fonts by character, name, or code point",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.104.25"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "^24.19.2",
+    "@vicinae/api": "^0.29.1",
+    "eslint": "^10.12.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "assets": "node scripts/prepare-assets.mjs",
+    "prebuild": "npm run assets",
+    "build": "ray build -e dist -o dist/raycast",
+    "prebuild:vicinae": "npm run assets",
+    "build:vicinae": "vici build -o dist/vicinae/character-search",
+    "predev": "npm run assets",
+    "dev": "ray develop",
+    "predev:vicinae": "npm run assets",
+    "dev:vicinae": "vici develop",
+    "lint": "eslint src scripts/*.mjs tests",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs"
+  }
+}
