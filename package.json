@@ -27,7 +27,7 @@
     "@types/node": "^24.19.2",
     "@vicinae/api": "^0.29.1",
     "eslint": "^10.12.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "scripts": {
     "assets": "node scripts/prepare-assets.mjs",
