@@ -79,9 +79,12 @@ function CharacterDetail({
   shortcodes: string[];
   keywords: string[];
 }) {
-  const markdown =
-    preview &&
-    `![Glyph preview](${preview}?raycast-width=112&raycast-height=112)`;
+  // Vicinae decodes everything after the data URI's comma as image content.
+  const imageSource =
+    preview && !preview.startsWith("data:")
+      ? `${preview}?raycast-width=112&raycast-height=112`
+      : preview;
+  const markdown = imageSource && `![Glyph preview](${imageSource})`;
   return (
     <List.Item.Detail
       markdown={markdown}
