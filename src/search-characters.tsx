@@ -383,6 +383,16 @@ export default function SearchCharacters() {
                           shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}
                         />
                         <Action.CopyToClipboard
+                          title="Copy Hexadecimal Code"
+                          content={entry.codes.join(" ")}
+                          shortcut={{ modifiers: ["cmd"], key: "x" }}
+                        />
+                        <Action.Paste
+                          title="Paste Hexadecimal Code"
+                          content={entry.codes.join(" ")}
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "x" }}
+                        />
+                        <Action.CopyToClipboard
                           title="Copy Unicode Escape"
                           content={formatUnicodeEscapes(entry)}
                           shortcut={{ modifiers: ["cmd"], key: "j" }}
