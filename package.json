@@ -37,6 +37,8 @@
     "build:vicinae": "vici build -o dist/vicinae/character-search",
     "predev": "npm run assets",
     "dev": "ray develop",
+    "predev:test": "npm run assets",
+    "dev:test": "node scripts/develop-raycast-test.mjs",
     "predev:vicinae": "npm run assets",
     "dev:vicinae": "vici develop",
     "lint": "eslint src scripts/*.mjs tests",
