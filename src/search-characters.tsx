@@ -164,10 +164,11 @@ export default function SearchCharacters() {
     () => catalog?.search(query, filter),
     [catalog, query, filter],
   );
+  const groupCatalogs = filter === "all";
   const pages = useMemo(
     () =>
-      matches?.paginate(pageSize, filter === "all" ? pageSize / 2 : undefined),
-    [matches, filter],
+      matches?.paginate(pageSize, groupCatalogs ? pageSize / 2 : undefined),
+    [matches, groupCatalogs],
   );
   const total = matches?.total ?? 0;
   const nextPage = firstPage + pageCount;
@@ -186,6 +187,16 @@ export default function SearchCharacters() {
         pages.count > 1
           ? `${offset + 1}–${offset + entries.length} of ${total}`
           : undefined;
+      if (!groupCatalogs) {
+        return [
+          {
+            key: JSON.stringify([query, filter, page]),
+            title: range,
+            subtitle: undefined,
+            entries,
+          },
+        ];
+      }
       return [
         {
           key: "unicode",
@@ -193,7 +204,7 @@ export default function SearchCharacters() {
         },
         {
           key: "nerd",
-          title: filter === "all" ? "Nerd Fonts" : undefined,
+          title: "Nerd Fonts",
           entries: entries.filter((entry) => entry.kind === "nerd"),
         },
       ]
@@ -205,7 +216,7 @@ export default function SearchCharacters() {
           subtitle: section.title && index === 0 ? range : undefined,
         }));
     }).flat();
-  }, [filter, firstPage, pages, pageCount, query, total]);
+  }, [filter, firstPage, groupCatalogs, pages, pageCount, query, total]);
   const selectedEntry =
     sections
       .map((section) =>

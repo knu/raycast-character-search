@@ -242,7 +242,7 @@ export function createCatalog(data: CatalogData) {
     return makeEntry(code, name, emojiIndices.has(code) ? "emoji" : "unicode");
   }
 
-  function list(matches: number[]): SearchResults {
+  function orderEmoji(matches: number[]) {
     const emojiPositions: number[] = [];
     const emojiMatches: number[] = [];
     for (let i = 0; i < matches.length; i++) {
@@ -256,7 +256,10 @@ export function createCatalog(data: CatalogData) {
     // Preserve the positions and order of non-emoji results.
     for (const [i, position] of emojiPositions.entries())
       matches[position] = emojiMatches[i];
+    return matches;
+  }
 
+  function list(matches: number[]): SearchResults {
     function page(offset: number, size: number) {
       return matches.slice(offset, offset + size).map(resolveEntry);
     }
@@ -317,10 +320,12 @@ export function createCatalog(data: CatalogData) {
     const query = rawQuery.trim();
     if (!rawQuery) {
       return list(
-        suggested.filter((index) => {
-          const entry = resolveEntry(index);
-          return matchesFilter(entry.kind, entry.codes.join(" "), filter);
-        }),
+        orderEmoji(
+          suggested.filter((index) => {
+            const entry = resolveEntry(index);
+            return matchesFilter(entry.kind, entry.codes.join(" "), filter);
+          }),
+        ),
       );
     }
 
@@ -330,16 +335,20 @@ export function createCatalog(data: CatalogData) {
     const acceptsShortcode = filter !== "nerd";
     if (shortcodeQuery && shortcodeMatches.size > 0) {
       if (!acceptsShortcode) return list([]);
-      const matched = new Set<number>();
-      if (shortcodeMatch !== undefined) matched.add(shortcodeMatch);
+      const prefixes = new Set<number>();
       if (!shortcodeQuery[2]) {
         for (const [name, index] of shortcodeMatches)
-          if (name.startsWith(shortcode)) matched.add(index);
+          if (index !== shortcodeMatch && name.startsWith(shortcode))
+            prefixes.add(index);
       }
+      const allowed = (index: number) =>
+        filter !== "unicode" || index < emojiOffset;
+      const exact =
+        shortcodeMatch !== undefined && allowed(shortcodeMatch)
+          ? [shortcodeMatch]
+          : [];
       return list(
-        [...matched].filter(
-          (index) => filter !== "unicode" || index < emojiOffset,
-        ),
+        exact.concat(orderEmoji([...prefixes].filter(allowed))),
       );
     }
 
@@ -372,16 +381,22 @@ export function createCatalog(data: CatalogData) {
     const nameQuery = normalizeName(query);
     if (!nameQuery) return list(exactMatches);
     const words = nameQuery.split(" ");
+    // Category prefixes qualify emoji without weakening a name match.
+    const emojiNameQuery =
+      words
+        .filter((word) => word.length === 1 || !"emoji".startsWith(word))
+        .join(" ") || nameQuery;
     const exactBlock = blocks.find((block) => block.term === nameQuery);
-    const buckets = Array.from({ length: 6 }, () => ({
+    const emojiMetadataPenalty = 2;
+    const buckets = Array.from({ length: 6 + emojiMetadataPenalty }, () => ({
       unicode: [] as number[],
       nerd: [] as number[],
     }));
 
-    function rank(term: string, exactRank = 0, extra = "") {
-      if (term === nameQuery) return exactRank;
-      if (` ${term} `.includes(` ${nameQuery} `)) return 2;
-      if (hasWordPrefix(term, nameQuery)) return 3;
+    function rank(term: string, exactRank = 0, extra = "", phrase = nameQuery) {
+      if (term === phrase) return exactRank;
+      if (` ${term} `.includes(` ${phrase} `)) return 2;
+      if (hasWordPrefix(term, phrase)) return 3;
       if (
         words.every(
           (word) => hasWordPrefix(term, word) || hasWordPrefix(extra, word),
@@ -392,7 +407,7 @@ export function createCatalog(data: CatalogData) {
         (word) => hasSubword(term, word) || hasSubword(extra, word),
       )
         ? 5
-        : 6;
+        : Infinity;
     }
 
     function rankEmoji(
@@ -404,19 +419,23 @@ export function createCatalog(data: CatalogData) {
       const shortName = normalizeName(data.emoji[index][1]);
       const names = [shortName, ...otherNames.map(normalizeName)];
       if (name !== undefined) names.unshift(normalizeName(name));
+      const primaryNames = name === undefined ? 1 : 2;
       const score = Math.min(
         ...names.map((term, position) =>
-          rank(term, position === 0 ? 0 : 1, "emoji"),
+          rank(term, position < primaryNames ? 0 : 1, "emoji", emojiNameQuery),
         ),
       );
       if (score < 5) return score;
       return Math.min(
         score,
-        rank(
-          "",
-          0,
-          `emoji ${names.join(" ")} ${emojiSearchTerms[index]} ${block}`,
-        ),
+        // Matches that require emoji tags, shortcodes, or block names rank
+        // after matches in the names themselves.
+        emojiMetadataPenalty +
+          rank(
+            "",
+            0,
+            `emoji ${names.join(" ")} ${emojiSearchTerms[index]} ${block}`,
+          ),
       );
     }
 
@@ -535,6 +554,7 @@ export function createCatalog(data: CatalogData) {
         for (const index of codeMatches)
           if (!exactMatches.includes(index)) ordered.push(index);
       }
+      orderEmoji(unicode);
       // Alternate equally ranked matches from the two catalogs.
       for (
         let index = 0;

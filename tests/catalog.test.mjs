@@ -49,30 +49,29 @@ test("shares mixed pages and fills unused slots without dropping results", () =>
   const results = catalog.search("circle");
   const pages = results.paginate(100, 50);
   const all = search("circle");
-  let remainingNerd = all.filter((entry) => entry.kind === "nerd").length;
-  let remainingUnicode = all.length - remainingNerd;
-  const shown = [];
+  const nerd = all.filter((entry) => entry.kind === "nerd");
+  const unicode = all.filter((entry) => entry.kind !== "nerd");
+  let nerdShown = 0;
+  let unicodeShown = 0;
   for (let index = 0; index < pages.count; index++) {
     const entries = pages.entries(index);
-    assert.equal(pages.offset(index), shown.length);
-    assert.equal(
-      entries.length,
-      Math.min(100, remainingUnicode + remainingNerd),
+    assert.equal(pages.offset(index), unicodeShown + nerdShown);
+    const size = Math.min(100, all.length - pages.offset(index));
+    const nerdCount = Math.min(
+      nerd.length - nerdShown,
+      size - Math.min(50, unicode.length - unicodeShown),
     );
-    const nerdCount = entries.filter((entry) => entry.kind === "nerd").length;
-    assert.equal(
-      nerdCount,
-      Math.min(remainingNerd, 100 - Math.min(50, remainingUnicode)),
-    );
-    remainingNerd -= nerdCount;
-    remainingUnicode -= entries.length - nerdCount;
-    shown.push(...entries);
+    const unicodeCount = size - nerdCount;
+    assert.deepEqual(entries, [
+      ...unicode.slice(unicodeShown, unicodeShown + unicodeCount),
+      ...nerd.slice(nerdShown, nerdShown + nerdCount),
+    ]);
+    unicodeShown += unicodeCount;
+    nerdShown += nerdCount;
   }
-  assert.equal(pages.offset(pages.count), shown.length);
-  assert.deepEqual(
-    shown.map((entry) => JSON.stringify(entry)).sort(),
-    all.map((entry) => JSON.stringify(entry)).sort(),
-  );
+  assert.equal(pages.offset(pages.count), all.length);
+  assert.equal(unicodeShown, unicode.length);
+  assert.equal(nerdShown, nerd.length);
 });
 
 test("fills a page with one catalog when the other has no results", () => {
@@ -258,30 +257,43 @@ test("ANDs emoji prefixes across name, alias, and search tags", () => {
   assert.equal(face.character, "😀");
 });
 
-test("orders emoji by the Unicode chart across mixed result pages", () => {
-  const firstEmoji = ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂"];
+test("orders equally scored emoji by the Unicode chart", () => {
+  const firstEmoji = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🙂"];
   const faces = catalog.search("emoji face", "emoji");
   assert.deepEqual(
     faces.page(0, 8).map((entry) => entry.character),
     firstEmoji,
   );
+});
 
-  const results = catalog.search("heart");
-  const pages = results.paginate(20, 10);
+test("ranks emoji names above search tags when a query includes the category", () => {
+  for (const query of ["emoji fish", "fish emoji", "em fish"]) {
+    const entries = search(query, "emoji");
+    assert.equal(entries[0].character, "🐟", query);
+    const names = entries.map((entry) => entry.name);
+    const boat = names.indexOf("ROWBOAT");
+    const tropicalFish = names.indexOf("TROPICAL FISH");
+    const blowfish = names.indexOf("BLOWFISH");
+    assert.ok(tropicalFish > 0 && blowfish > tropicalFish && boat > blowfish, query);
+  }
+});
+
+test("keeps exact and whole-word matches above subwords within each catalog", () => {
+  const results = catalog.search("lock");
+  const pages = results.paginate(100, 50);
   const entries = Array.from({ length: pages.count }, (_, index) =>
     pages.entries(index),
   ).flat();
-  assert.ok(entries.some((entry) => entry.kind === "nerd"));
-  assert.ok(entries.some((entry) => entry.kind === "unicode"));
-  const emojiCodes = entries
-    .filter((entry) => entry.kind === "emoji")
-    .map((entry) => entry.codes.join(" "));
-  const matches = new Set(emojiCodes);
-  assert.ok(emojiCodes.length > 20);
-  assert.deepEqual(
-    emojiCodes,
-    data.emoji.map(([code]) => code).filter((code) => matches.has(code)),
-  );
+  assert.equal(entries[0].character, "🔒");
+  const names = entries.map((entry) => entry.name);
+  const wholeWord = names.indexOf("OPEN LOCK");
+  const nerdExact = names.indexOf("nf-fa-lock");
+  assert.ok(wholeWord > 0 && nerdExact >= 50);
+  for (const name of ["FULL BLOCK", "ALARM CLOCK"]) {
+    assert.ok(names.indexOf(name) > wholeWord, name);
+  }
+  assert.ok(names.indexOf("nf-fa-clock") > nerdExact);
+  assert.equal(search("lock", "emoji")[0].character, "🔒");
 });
 
 test("pages broad queries while leaving examples in each filter", () => {
