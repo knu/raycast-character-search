@@ -1,10 +1,19 @@
 import {
   Action,
   ActionPanel,
+  Clipboard,
+  closeMainWindow,
+  Color,
   environment,
   Icon,
-  Keyboard,
+  type Keyboard,
+  launchCommand,
+  type LaunchProps,
+  LaunchType,
   List,
+  PopToRootType,
+  showToast,
+  Toast,
 } from "@raycast/api";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -59,6 +68,40 @@ function formatUnicodeEscapes(entry: Entry): string {
     .join("");
 }
 
+type OutputChoice = {
+  id: string;
+  label: string;
+  content: string;
+  key?: Keyboard.KeyEquivalent;
+};
+
+function outputChoices(entry: Entry, shortcodes: string[]): OutputChoice[] {
+  const codeNames = entry.kind === "nerd" ? [entry.name] : shortcodes;
+  return [
+    { id: "c", key: "c", label: "Character", content: entry.character },
+    { id: "n", key: "n", label: "Name", content: entry.name },
+    { id: "u", key: "u", label: "Code Point", content: formatCodePoints(entry) },
+    {
+      id: "x",
+      key: "x",
+      label: "Hexadecimal Code",
+      content: entry.codes.join(" "),
+    },
+    {
+      id: "j",
+      key: "j",
+      label: "Unicode Escape",
+      content: formatUnicodeEscapes(entry),
+    },
+    ...codeNames.map((content, index): OutputChoice => ({
+      id: index === 0 ? "g" : content,
+      key: index === 0 ? "g" : undefined,
+      label: content,
+      content,
+    })),
+  ];
+}
+
 function displayGlyph(character: string): string {
   if (/^[\p{C}\p{White_Space}]+$/u.test(character)) return "";
   return /^\p{M}/u.test(character) ? `◌${character}` : character;
@@ -79,18 +122,38 @@ function unicodeGlyphImage(glyph: string, badge = false): string | undefined {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
+function DetailField({
+  title,
+  value,
+  selected,
+}: {
+  title: string;
+  value: string;
+  selected: boolean;
+}) {
+  return (
+    <List.Item.Detail.Metadata.Label
+      title={title}
+      text={selected ? { value, color: Color.Blue } : value}
+      icon={selected ? { source: Icon.Check, tintColor: Color.Blue } : undefined}
+    />
+  );
+}
+
 function CharacterDetail({
   entry,
   preview,
   codePoints,
   shortcodes,
   keywords,
+  output,
 }: {
   entry: Entry;
   preview: string | undefined;
   codePoints: string;
   shortcodes: string[];
   keywords: string[];
+  output: OutputChoice;
 }) {
   // Vicinae decodes everything after the data URI's comma as image content.
   const imageSource =
@@ -98,20 +161,39 @@ function CharacterDetail({
       ? `${preview}?raycast-width=112&raycast-height=112`
       : preview;
   const markdown = imageSource && `![Glyph preview](${imageSource})`;
+  const codeNameSelected = output.id === "g" || shortcodes.includes(output.id);
   return (
     <List.Item.Detail
       markdown={markdown}
       metadata={
         <List.Item.Detail.Metadata>
-          <List.Item.Detail.Metadata.Label title="Name" text={entry.name} />
-          <List.Item.Detail.Metadata.Label
+          <DetailField
+            title="Name"
+            value={entry.name}
+            selected={
+              output.id === "n" || (entry.kind === "nerd" && codeNameSelected)
+            }
+          />
+          <DetailField
             title="Code Point"
-            text={codePoints}
+            value={codePoints}
+            selected={output.id === "u"}
+          />
+          <DetailField
+            title="Hexadecimal Code"
+            value={entry.codes.join(" ")}
+            selected={output.id === "x"}
+          />
+          <DetailField
+            title="Unicode Escape"
+            value={formatUnicodeEscapes(entry)}
+            selected={output.id === "j"}
           />
           {shortcodes.length > 0 && (
-            <List.Item.Detail.Metadata.Label
+            <DetailField
               title="GitHub"
-              text={shortcodes.join(", ")}
+              value={shortcodes.join(", ")}
+              selected={codeNameSelected}
             />
           )}
           {keywords.length > 0 && (
@@ -134,17 +216,45 @@ type SearchState = {
   selectedId?: string;
 };
 
-export default function SearchCharacters() {
+type ResumeContext = { search: SearchState; outputId: string };
+
+async function pasteAndContinue(content: string, context: ResumeContext) {
+  const [major, minor] = (environment.raycastVersion ?? "").split(".").map(Number);
+  if (major > 2 || (major === 2 && minor >= 10)) {
+    // Raycast 2.10 added this option after the pinned API types were published.
+    const paste: (
+      text: string,
+      options: { closeMainWindow: boolean },
+    ) => Promise<void> = Clipboard.paste;
+    await paste(content, { closeMainWindow: false });
+    return;
+  }
+
+  await closeMainWindow({ popToRootType: PopToRootType.Suspended });
+  await Clipboard.paste(content);
+  await launchCommand({
+    name: environment.commandName,
+    type: LaunchType.UserInitiated,
+    context: { resume: context },
+  });
+}
+
+export default function SearchCharacters({
+  launchContext,
+}: LaunchProps<{ launchContext: { resume?: ResumeContext } }>) {
   const [catalog, setCatalog] =
     useState<Awaited<ReturnType<typeof loadCatalog>>>();
   const [failed, setFailed] = useState(false);
-  const [{ query, filter, firstPage, pageCount, selectedId }, setSearchState] =
-    useState<SearchState>({
+  const [outputId, setOutputId] = useState(launchContext?.resume?.outputId ?? "c");
+  const [searchState, setSearchState] = useState<SearchState>(
+    launchContext?.resume?.search ?? {
       query: "",
       filter: "all",
       firstPage: 0,
       pageCount: 1,
-    });
+    },
+  );
+  const { query, filter, firstPage, pageCount, selectedId } = searchState;
   useEffect(() => {
     let active = true;
     loadCatalog().then(
@@ -324,11 +434,13 @@ export default function SearchCharacters() {
       {sections.map(({ key, title, subtitle, entries }) => (
         <List.Section key={key} title={title} subtitle={subtitle}>
           {entries.map((entry) => {
+            const isSelected = entry === selectedEntry;
             const codePoints = formatCodePoints(entry);
-            const [names, keywords] = (entry === selectedEntry &&
-              catalog?.emojiInfo(entry)) || [[], []];
+            const [names, keywords] =
+              (isSelected && catalog?.emojiInfo(entry)) || [[], []];
             const shortcodes = names.map((name) => `:${name}:`);
-            const codeNames = entry.kind === "nerd" ? [entry.name] : shortcodes;
+            const choices = isSelected ? outputChoices(entry, shortcodes) : [];
+            const output = choices.find(({ id }) => id === outputId) ?? choices[0];
             const nerdPreview =
               catalog && entry.kind === "nerd"
                 ? previewFor(catalog.previewId, entry.codes[0])
@@ -348,98 +460,70 @@ export default function SearchCharacters() {
                 title={entry.name}
                 icon={preview}
                 detail={
-                  entry === selectedEntry && (
+                  output && (
                     <CharacterDetail
                       entry={entry}
                       preview={preview}
                       codePoints={codePoints}
                       shortcodes={shortcodes}
                       keywords={keywords}
+                      output={output}
                     />
                   )
                 }
                 actions={
-                  entry === selectedEntry && (
+                  output && (
                     <ActionPanel>
                       <ActionPanel.Section>
                         <Action.Paste
-                          title="Paste Character"
-                          content={entry.character}
+                          title={`Paste ${output.label}`}
+                          content={output.content}
                         />
                         <Action.CopyToClipboard
-                          title="Copy Character"
-                          content={entry.character}
+                          title={`Copy ${output.label}`}
+                          content={output.content}
                           shortcut={{ modifiers: ["cmd"], key: "c" }}
                         />
-                      </ActionPanel.Section>
-                      <ActionPanel.Section>
-                        <Action.CopyToClipboard
-                          title="Copy Name"
-                          content={entry.name}
-                          shortcut={Keyboard.Shortcut.Common.New}
+                        <Action
+                          title={`Paste ${output.label} and Continue`}
+                          shortcut={{ modifiers: ["shift"], key: "enter" }}
+                          onAction={() =>
+                            pasteAndContinue(output.content, {
+                              search: {
+                                ...searchState,
+                                selectedId: entryId(entry),
+                              },
+                              outputId,
+                            })
+                          }
                         />
-                        <Action.Paste
-                          title="Paste Name"
-                          content={entry.name}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "n" }}
-                        />
-                        <Action.CopyToClipboard
-                          title="Copy Code Point"
-                          content={codePoints}
-                          shortcut={{ modifiers: ["cmd"], key: "u" }}
-                        />
-                        <Action.Paste
-                          title="Paste Code Point"
-                          content={codePoints}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}
-                        />
-                        <Action.CopyToClipboard
-                          title="Copy Hexadecimal Code"
-                          content={entry.codes.join(" ")}
-                          shortcut={{ modifiers: ["cmd"], key: "x" }}
-                        />
-                        <Action.Paste
-                          title="Paste Hexadecimal Code"
-                          content={entry.codes.join(" ")}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "x" }}
-                        />
-                        <Action.CopyToClipboard
-                          title="Copy Unicode Escape"
-                          content={formatUnicodeEscapes(entry)}
-                          shortcut={{ modifiers: ["cmd"], key: "j" }}
-                        />
-                        <Action.Paste
-                          title="Paste Unicode Escape"
-                          content={formatUnicodeEscapes(entry)}
-                          shortcut={{ modifiers: ["cmd", "shift"], key: "j" }}
+                        <Action
+                          title={`Copy ${output.label} and Continue`}
+                          // Keep this distinct from Vicinae's configurable Copy shortcut.
+                          // eslint-disable-next-line @raycast/prefer-common-shortcut
+                          shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                          onAction={async () => {
+                            await Clipboard.copy(output.content);
+                            await showToast({
+                              style: Toast.Style.Success,
+                              title: "Copied to Clipboard",
+                            });
+                          }}
                         />
                       </ActionPanel.Section>
-                      {codeNames.length > 0 && (
-                        <ActionPanel.Section title="Code Names">
-                          {codeNames.flatMap((codeName, index) => [
-                            <Action.Paste
-                              key={`paste/${codeName}`}
-                              title={`Paste ${codeName}`}
-                              content={codeName}
-                              shortcut={
-                                index === 0
-                                  ? { modifiers: ["shift"], key: "enter" }
-                                  : undefined
-                              }
-                            />,
-                            <Action.CopyToClipboard
-                              key={`copy/${codeName}`}
-                              title={`Copy ${codeName}`}
-                              content={codeName}
-                              shortcut={
-                                index === 0
-                                  ? { modifiers: ["cmd", "shift"], key: "c" }
-                                  : undefined
-                              }
-                            />,
-                          ])}
-                        </ActionPanel.Section>
-                      )}
+                      <ActionPanel.Section title="Output Format">
+                        {choices.map(({ id, label, key }) => (
+                          <Action
+                            key={id}
+                            title={`Use ${label}`}
+                            icon={id === output.id ? Icon.Check : undefined}
+                            shortcut={
+                              key ? { modifiers: ["opt"], key } : undefined
+                            }
+                            onAction={() => setOutputId(id)}
+                          />
+                        ))}
+                      </ActionPanel.Section>
                       {(hasMore || firstPage > 0) && (
                         <ActionPanel.Section>
                           {hasMore && (
