@@ -115,9 +115,12 @@ function unicodeGlyphImage(glyph: string, badge = false): string | undefined {
     (character) => `&#${character.codePointAt(0)};`,
   ).join("");
   const fill = environment.theme === "light" ? "#202639" : "#f4f6ff";
+  // Noto Sans Symbols 2 was previously named Noto Sans Symbols2.
+  const symbolFonts =
+    "sans-serif, 'Apple Symbols', 'Noto Sans Symbols 2', 'Noto Sans Symbols2', 'Monaspace Argon NF'";
   const content = badge
     ? `<rect x="5" y="26" width="102" height="60" rx="9" fill="none" stroke="${fill}" stroke-width="4"/><text x="56" y="56" dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="${Math.min(36, Math.floor(140 / glyph.length))}" font-weight="bold" fill="${fill}">${entities}</text>`
-    : `<text x="56" y="82" text-anchor="middle" font-family="sans-serif" font-size="78" fill="${fill}">${entities}</text>`;
+    : `<text x="56" y="82" text-anchor="middle" font-family="${symbolFonts}" font-size="78" fill="${fill}">${entities}</text>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 112 112">${content}</svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
