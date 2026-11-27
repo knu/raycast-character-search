@@ -52,6 +52,26 @@ const exampleCharacters = [
 ];
 const exampleGlyphNames = ["nf-fa-github", "nf-fa-terminal"];
 
+const nerdGroupNames = new Map([
+  ["cod", "codicons"],
+  ["custom", "seti ui custom"],
+  ["dev", "devicons"],
+  ["extra", "progress indicators"],
+  ["fa", "font awesome"],
+  ["fae", "font awesome extension"],
+  ["iec", "iec power symbols"],
+  ["indent", "indentation guides"],
+  ["indentation", "indentation guides"],
+  ["linux", "font logos"],
+  ["md", "material design icons"],
+  ["oct", "octicons"],
+  ["pl", "powerline symbols"],
+  ["ple", "powerline extra symbols"],
+  ["pom", "pomicons"],
+  ["seti", "seti ui custom"],
+  ["weather", "weather icons"],
+]);
+
 function normalizeName(name: string): string {
   return name
     .toLowerCase()
@@ -387,8 +407,8 @@ export function createCatalog(data: CatalogData) {
         .filter((word) => word.length === 1 || !"emoji".startsWith(word))
         .join(" ") || nameQuery;
     const exactBlock = blocks.find((block) => block.term === nameQuery);
-    const emojiMetadataPenalty = 2;
-    const buckets = Array.from({ length: 6 + emojiMetadataPenalty }, () => ({
+    const metadataPenalty = 2;
+    const buckets = Array.from({ length: 6 + metadataPenalty }, () => ({
       unicode: [] as number[],
       nerd: [] as number[],
     }));
@@ -430,7 +450,7 @@ export function createCatalog(data: CatalogData) {
         score,
         // Matches that require emoji tags, shortcodes, or block names rank
         // after matches in the names themselves.
-        emojiMetadataPenalty +
+        metadataPenalty +
           rank(
             "",
             0,
@@ -535,14 +555,19 @@ export function createCatalog(data: CatalogData) {
       data.nerd.forEach(([, name], index) => {
         const term = normalizeName(name);
         const familyAndName = term.slice(3);
-        const glyphName = familyAndName.slice(familyAndName.indexOf(" ") + 1);
+        const familyEnd = familyAndName.indexOf(" ");
+        const glyphName = familyAndName.slice(familyEnd + 1);
+        const score = Math.min(
+          rank(term, 0, "nerd"),
+          rank(familyAndName, 1, "nerd"),
+          rank(glyphName, 1, "nerd"),
+        );
+        const group = nerdGroupNames.get(familyAndName.slice(0, familyEnd));
         add(
           nerdOffset + index,
-          Math.min(
-            rank(term, 0, "nerd"),
-            rank(familyAndName, 1, "nerd"),
-            rank(glyphName, 1, "nerd"),
-          ),
+          score === Infinity && group
+            ? metadataPenalty + rank("", 0, `nerd ${term} ${group}`)
+            : score,
         );
       });
     }

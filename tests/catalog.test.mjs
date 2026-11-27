@@ -236,6 +236,26 @@ test("finds Nerd Fonts family tokens and joins them with subwords", () => {
   assert.equal(search("od termin", "nerd")[0].name, "nf-cod-terminal");
 });
 
+test("searches Nerd Fonts group names alone and with glyph names", () => {
+  const extraSymbols = data.nerd
+    .map(([, name]) => name)
+    .filter((name) => name.startsWith("nf-ple-"));
+  assert.deepEqual(
+    search("powerline-extra-symbols", "nerd").map((entry) => entry.name),
+    extraSymbols,
+  );
+  assert.ok(
+    search("powerline extra symbols flame").some(
+      (entry) => entry.name === "nf-ple-flame_thick",
+    ),
+  );
+  assert.ok(
+    search("font awesome github", "nerd").some(
+      (entry) => entry.name === "nf-fa-github",
+    ),
+  );
+});
+
 test("finds GitHub emoji by exact shortcode, partial shortcode, or alias", () => {
   for (const query of [":+1:", ":thumbsup:", "thumbsup", ":thu"]) {
     const [entry] = search(query);
